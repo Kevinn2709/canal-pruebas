@@ -1,0 +1,694 @@
+rules_version = '2';
+
+// PROYECTO DE PRUEBAS (canal-pruebas): fundador de prueba y dos miembros de prueba.
+
+// Reglas de seguridad de Firestore para el chat cifrado.
+//
+// Tres listas de UID (Firebase -> Authentication -> Users -> "User UID"):
+//
+// 1) founders(): las dos cuentas originales (tú y tu socio). Crean chats,
+//    aprueban cuentas nuevas, ven a todos los miembros y son los únicos que
+//    leen las conversaciones de antes.
+// 2) admins(): fundadores adicionales. Igual que los de arriba (crean chats,
+//    aprueban, ven a todos), pero SIN las conversaciones de antes.
+// 3) others(): miembros. Solo usan los chats a los que un fundador los
+//    agrega: no crean chats ni ven quién más está en la web.
+//
+// Mientras una lista no tenga a nadie, deja los textos de ejemplo: no
+// estorban. Pega este archivo completo en Firebase -> Firestore Database ->
+// Rules y pulsa "Publish". Cada vez que sumes a alguien o le cambies de
+// lista, edita aquí y vuelve a publicar.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function founders() {
+      return ['whgQKl87uicB77tqgkbYn3zXZtv2'];
+    }
+
+    function admins() {
+      return [];
+    }
+
+    function others() {
+      return ['j7BPHRnmvggwO3C4QpF8QVJJx3I2', '3Txb7vMGAKRnOCp0Hb2Ykba3Xwl2'];
+    }
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Fundador original: conversaciones de antes.
+    function isFounder() {
+      return signedIn() && request.auth.uid in founders();
+    }
+
+    // Fundador (original o adicional): crea chats, aprueba y ve a todos.
+    function isAdmin() {
+      return signedIn() && (request.auth.uid in founders() || request.auth.uid in admins());
+    }
+
+    function isMember() {
+      return signedIn()
+        && (request.auth.uid in founders() || request.auth.uid in admins() || request.auth.uid in others());
+    }
+
+    function allMembers() {
+      return founders().concat(admins()).concat(others());
+    }
+
+    // Un fundador puede leer lo de cualquiera; un miembro, solo lo suyo.
+    function selfOrAdmin(userId) {
+      return isMember() && (request.auth.uid == userId || isAdmin());
+    }
+
+    // ¿Puede usar esta conversación? Las nuevas tienen lista de miembros;
+    // las de antes (sin lista) son de los fundadores.
+    function canUseChat(chatId) {
+      let c = get(/databases/$(database)/documents/chats/$(chatId)).data;
+      return isMember()
+        && ((('members' in c) && request.auth.uid in c.members)
+            || (!('members' in c) && isFounder()));
+    }
+
+    // ¿`uid` es miembro de este chat? (En las de antes, los fundadores.)
+    function chatHas(chatId, uid) {
+      let c = get(/databases/$(database)/documents/chats/$(chatId)).data;
+      return (('members' in c) && uid in c.members) || (!('members' in c) && uid in founders());
+    }
+
+    // ¿El mensaje ya no existe (después de esta escritura)? Para poder borrar
+    // las reacciones de un mensaje eliminado.
+    function msgGone(chatId, msgId) {
+      return (chatId == 'general'
+          && !existsAfter(/databases/$(database)/documents/messages/$(msgId)))
+        || (chatId != 'general'
+          && !existsAfter(/databases/$(database)/documents/chats/$(chatId)/messages/$(msgId)));
+    }
+
+    // ¿Se puede escribir en este chat? Si un administrador activó "solo
+    // administradores pueden escribir" (locked), solo ellos.
+    function chatOpen(chatId) {
+      return isAdmin()
+        || get(/databases/$(database)/documents/chats/$(chatId)).data.get('locked', false) != true;
+    }
+
+    // Destacar o quitar el destacado: solo cambia el campo "star".
+    function validStar() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['star'])
+        && request.resource.data.star is bool;
+    }
+
+    // Señal de llamada: solo texto cifrado, a nombre de quien la envía.
+    function validSignal(fields) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(fields)
+        && d.from == request.auth.uid
+        && d.iv is string
+        && d.iv.size() == 16
+        && d.ct is string
+        && d.ct.size() > 0
+        && d.ct.size() <= 30000
+        && d.at == request.time;
+    }
+
+    // Un mensaje: solo texto cifrado, a nombre de quien lo envía.
+    function validMessage() {
+      let d = request.resource.data;
+      return d.keys().hasAll(['ct', 'iv', 'uid', 'createdAt'])
+        && d.keys().hasOnly(['ct', 'iv', 'uid', 'createdAt', 'v'])
+        && d.uid == request.auth.uid
+        && d.ct is string
+        && d.ct.size() > 0
+        && d.ct.size() <= 20000
+        && d.iv is string
+        && d.iv.size() == 16
+        && d.createdAt == request.time
+        && (!d.keys().hasAny(['v']) || d.v == 2);
+    }
+
+    // Un trozo de archivo cifrado (hasta ~900 KB).
+    function validChunk() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['data', 'iv', 'uid', 'createdAt'])
+        && d.data is bytes
+        && d.data.size() <= 1000000
+        && d.iv is string
+        && d.iv.size() == 16
+        && d.uid == request.auth.uid
+        && d.createdAt == request.time;
+    }
+
+    function validTask(chatId) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['chatId', 'ct', 'iv', 'createdBy', 'createdAt', 'done', 'doneBy', 'doneAt'])
+        && d.chatId == chatId
+        && d.ct is string
+        && d.ct.size() <= 20000
+        && d.iv is string
+        && d.iv.size() == 16
+        && d.createdBy == request.auth.uid
+        && d.createdAt == request.time
+        && d.done == false
+        && d.doneBy == null
+        && d.doneAt == null;
+    }
+
+    function validTaskUpdate() {
+      let d = request.resource.data;
+      return d.diff(resource.data).affectedKeys().hasOnly(['done', 'doneBy', 'doneAt'])
+        && ((d.done == true && d.doneBy == request.auth.uid && d.doneAt == request.time)
+            || (d.done == false && d.doneBy == null && d.doneAt == null));
+    }
+
+    // =====================================================================
+    // Cuentas
+    // =====================================================================
+
+    // Paquete privado de cada quien (cifrado con su frase personal).
+    // Solo su dueño lo lee y lo escribe.
+    match /keys/{userId} {
+      allow read: if isMember() && request.auth.uid == userId;
+      allow create, update: if isMember()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['salt', 'iterations', 'iv', 'ct', 'updatedAt'])
+        && request.resource.data.salt is string
+        && request.resource.data.salt.size() == 24
+        && request.resource.data.iterations is number
+        && request.resource.data.iterations >= 100000
+        && request.resource.data.iterations <= 10000000
+        && request.resource.data.iv is string
+        && request.resource.data.iv.size() == 16
+        && request.resource.data.ct is string
+        && request.resource.data.ct.size() <= 20000
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // Lo público de cada quien: llave pública, perfil cifrado, si es
+    // fundador y hasta dónde leyó cada chat. Cada quien solo escribe el suyo.
+    // Solo un fundador ve la lista completa; un miembro conoce a los demás
+    // por la copia que guarda cada chat (chats/{id}/people), así que solo ve
+    // a quienes comparten un chat con él.
+    match /users/{userId} {
+      allow get: if selfOrAdmin(userId);
+      allow list: if isAdmin();
+      allow create, update: if isMember()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(
+             ['pub', 'founder', 'setupAt', 'profIv', 'profCt', 'lastRead', 'readCount'])
+        && (!('pub' in request.resource.data)
+            || (request.resource.data.pub is string && request.resource.data.pub.size() <= 400))
+        && (!('founder' in request.resource.data)
+            || request.resource.data.founder == false
+            || (request.resource.data.founder == true && isFounder()))
+        && (!('profIv' in request.resource.data)
+            || (request.resource.data.profIv is string && request.resource.data.profIv.size() == 16))
+        && (!('profCt' in request.resource.data)
+            || (request.resource.data.profCt is string && request.resource.data.profCt.size() <= 2000))
+        && (!('lastRead' in request.resource.data) || request.resource.data.lastRead is map)
+        && (!('readCount' in request.resource.data) || request.resource.data.readCount is map);
+      allow delete: if false;
+    }
+
+    // Foto de perfil, cifrada. Misma regla de lectura que users/.
+    match /avatars/{userId} {
+      allow get: if selfOrAdmin(userId);
+      allow list: if isAdmin();
+      allow create, update: if isMember()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['iv', 'data', 'updatedAt'])
+        && request.resource.data.iv is string
+        && request.resource.data.iv.size() == 16
+        && request.resource.data.data is bytes
+        && request.resource.data.data.size() <= 300000
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // Aprobación: la llave del espacio que un fundador le pasa (cifrada solo
+    // para él) a otro. Nadie se la puede dar a sí mismo. Lleva la llave
+    // pública de quien aprueba (spub), comprobada aquí contra su users/,
+    // porque quien recibe no puede leer users/ de otros.
+    match /wraps/{userId} {
+      allow get: if selfOrAdmin(userId);
+      allow list: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.auth.uid != userId
+        && userId in allMembers()
+        && request.resource.data.keys().hasOnly(['from', 'spub', 'fp', 'iv', 'ct', 'at'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.spub
+             == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.pub
+        && request.resource.data.fp is string
+        && request.resource.data.fp.size() == 64
+        && request.resource.data.iv is string
+        && request.resource.data.iv.size() == 16
+        && request.resource.data.ct is string
+        && request.resource.data.ct.size() <= 1000
+        && request.resource.data.at == request.time;
+      allow delete: if false;
+    }
+
+    // Suscripciones push de cada quien y chats silenciados. La función de
+    // avisos las lee una por una con el permiso de quien envía; nadie puede
+    // listarlas. Solo el dueño las cambia. Solo los administradores
+    // (fundadores y admins) pueden guardar suscripciones: un miembro solo
+    // guarda sus chats silenciados (con subs vacío).
+    match /push/{userId} {
+      allow get: if isMember();
+      allow list: if false;
+      allow create, update: if isMember()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['subs', 'muted'])
+        && request.resource.data.subs is map
+        && request.resource.data.subs.size() <= 20
+        && (request.resource.data.subs.size() == 0 || isAdmin())
+        && request.resource.data.muted is list
+        && request.resource.data.muted.size() <= 200;
+      allow delete: if false;
+    }
+
+    // Chats fijados y alias (cifrados) de cada quien. Privado.
+    match /prefs/{userId} {
+      allow read: if isMember() && request.auth.uid == userId;
+      allow create, update: if isMember()
+        && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['pinned', 'updatedAt', 'aliasIv', 'aliasCt'])
+        && (!('pinned' in request.resource.data)
+            || (request.resource.data.pinned is list && request.resource.data.pinned.size() <= 50))
+        && (!('aliasIv' in request.resource.data)
+            || (request.resource.data.aliasIv is string && request.resource.data.aliasIv.size() == 16))
+        && (!('aliasCt' in request.resource.data)
+            || (request.resource.data.aliasCt is string && request.resource.data.aliasCt.size() <= 20000))
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // La llave del espacio cifrada con la llave anterior (solo fundadores).
+    match /meta/space {
+      allow read: if isFounder();
+      allow create: if isFounder()
+        && request.resource.data.keys().hasOnly(['iv', 'ct', 'createdBy', 'createdAt'])
+        && request.resource.data.iv is string
+        && request.resource.data.iv.size() <= 16
+        && request.resource.data.ct is string
+        && request.resource.data.ct.size() <= 200
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // Solo para saber si esta cuenta es fundador (original o adicional): la
+    // web intenta leerlo. No hace falta que exista.
+    match /meta/admin {
+      allow get: if isAdmin();
+      allow list, write: if false;
+    }
+
+    // Datos de la frase compartida de la versión anterior (solo fundadores).
+    match /meta/crypto {
+      allow read: if isFounder();
+      allow create: if isFounder()
+        && request.resource.data.keys().hasOnly(
+             ['salt', 'iterations', 'checkIv', 'checkCt', 'createdBy', 'createdAt'])
+        && request.resource.data.salt is string
+        && request.resource.data.salt.size() == 24
+        && request.resource.data.iterations is number
+        && request.resource.data.iterations >= 100000
+        && request.resource.data.iterations <= 10000000
+        && request.resource.data.checkIv is string
+        && request.resource.data.checkIv.size() == 16
+        && request.resource.data.checkCt is string
+        && request.resource.data.checkCt.size() < 200
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
+    // =====================================================================
+    // Conversaciones
+    // =====================================================================
+
+    // Nombre, proyecto y vista previa van cifrados. Nunca se borran.
+    // Los fundadores pueden ver que existe cualquier chat (no su contenido):
+    // así encuentran las conversaciones de antes, que no tienen lista.
+    match /chats/{chatId} {
+      function inChat() {
+        return (('members' in resource.data) && request.auth.uid in resource.data.members)
+          || (!('members' in resource.data) && isFounder());
+      }
+      function changed() {
+        return request.resource.data.diff(resource.data).affectedKeys();
+      }
+
+      allow read: if isFounder() || (isMember() && request.auth.uid in resource.data.members);
+
+      // Solo un fundador crea chats.
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(
+             ['members', 'metaIv', 'metaCt', 'createdBy', 'createdAt', 'lastMessageAt',
+              'lastMessageBy', 'archived', 'count'])
+        && request.resource.data.members is list
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.members.size() >= 1
+        && request.resource.data.members.size() <= 8
+        && request.resource.data.members.hasOnly(allMembers())
+        && request.resource.data.metaIv is string
+        && request.resource.data.metaIv.size() == 16
+        && request.resource.data.metaCt is string
+        && request.resource.data.metaCt.size() <= 2000
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.lastMessageAt == request.time
+        && request.resource.data.lastMessageBy == request.auth.uid
+        && request.resource.data.archived == false
+        && request.resource.data.count == 0;
+
+      allow update: if isMember() && inChat() && (
+        // Mensaje nuevo (cualquier miembro): hora, autor, vista previa cifrada
+        // y contador +1.
+        (changed().hasOnly(['lastMessageAt', 'lastMessageBy', 'lastIv', 'lastCt', 'count'])
+          && request.resource.data.lastMessageAt == request.time
+          && request.resource.data.lastMessageBy == request.auth.uid
+          && (!changed().hasAny(['lastIv']) || (request.resource.data.lastIv is string
+                && request.resource.data.lastIv.size() == 16))
+          && (!changed().hasAny(['lastCt']) || (request.resource.data.lastCt is string
+                && request.resource.data.lastCt.size() <= 2000))
+          && (!changed().hasAny(['count'])
+              || request.resource.data.count == resource.data.get('count', 0) + 1))
+        // Salir del chat (cualquier miembro, solo a sí mismo).
+        || (changed().hasOnly(['members'])
+          && ('members' in resource.data)
+          && request.resource.data.members is list
+          && request.resource.data.members.size() >= 1
+          && request.resource.data.members.size() == resource.data.members.size() - 1
+          && request.resource.data.members.toSet()
+               == resource.data.members.toSet().difference([request.auth.uid].toSet()))
+        // Nueva vista previa (cifrada) al eliminar mensajes (cualquier miembro).
+        || (changed().hasOnly(['lastIv', 'lastCt'])
+          && request.resource.data.lastIv is string
+          && request.resource.data.lastIv.size() == 16
+          && request.resource.data.lastCt is string
+          && request.resource.data.lastCt.size() <= 2000)
+        // De aquí en adelante, solo un fundador.
+        // Renombrar o cambiar de proyecto.
+        || (isAdmin() && changed().hasOnly(['metaIv', 'metaCt'])
+          && request.resource.data.metaIv is string
+          && request.resource.data.metaIv.size() == 16
+          && request.resource.data.metaCt is string
+          && request.resource.data.metaCt.size() <= 2000)
+        // Archivar o desarchivar.
+        || (isAdmin() && changed().hasOnly(['archived']) && request.resource.data.archived is bool)
+        // Solo administradores pueden escribir (o todos).
+        || (isAdmin() && changed().hasOnly(['locked']) && request.resource.data.locked is bool)
+        // Agregar o quitar miembros (solo en las conversaciones nuevas).
+        || (isAdmin() && changed().hasOnly(['members'])
+          && ('members' in resource.data)
+          && request.resource.data.members is list
+          && request.resource.data.members.size() >= 1
+          && request.resource.data.members.size() <= 8
+          && request.resource.data.members.hasOnly(allMembers()))
+      );
+      allow delete: if false;
+
+      // La llave del chat, cifrada para cada miembro. La entrega otro
+      // miembro del chat (o uno mismo); el destinatario debe ser miembro.
+      match /keys/{userId} {
+        // getAfter: vale también cuando el chat se crea en la misma escritura.
+        function bothInChat(target) {
+          let m = getAfter(/databases/$(database)/documents/chats/$(chatId)).data.members;
+          return request.auth.uid in m && target in m;
+        }
+        allow read: if canUseChat(chatId);
+        allow create, update: if isMember()
+          && bothInChat(userId)
+          && request.resource.data.keys().hasOnly(['from', 'fp', 'iv', 'ct', 'at'])
+          && request.resource.data.from == request.auth.uid
+          && request.resource.data.fp is string
+          && request.resource.data.fp.size() == 64
+          && request.resource.data.iv is string
+          && request.resource.data.iv.size() == 16
+          && request.resource.data.ct is string
+          && request.resource.data.ct.size() <= 200
+          && request.resource.data.at == request.time;
+        allow delete: if false;
+      }
+
+      // Mensajes. Cualquier miembro puede destacar uno; lo elimina quien lo
+      // envió o un fundador (también al vaciar el chat).
+      match /messages/{messageId} {
+        allow read: if canUseChat(chatId);
+        allow create: if canUseChat(chatId) && validMessage() && chatOpen(chatId);
+        allow update: if canUseChat(chatId) && validStar();
+        allow delete: if canUseChat(chatId)
+          && (resource == null || resource.data.uid == request.auth.uid || isAdmin());
+      }
+
+      // Reacciones: una por persona y mensaje ({mensaje}_{uid}). El emoji va
+      // cifrado; quitarla la deja vacía. Cada quien solo toca la suya. Se
+      // borran junto con su mensaje.
+      match /reactions/{reactionId} {
+        allow read: if canUseChat(chatId);
+        allow create, update: if canUseChat(chatId)
+          && request.resource.data.keys().hasOnly(['msg', 'uid', 'ct', 'iv', 'updatedAt'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.msg is string
+          && reactionId == request.resource.data.msg + '_' + request.auth.uid
+          && request.resource.data.ct is string
+          && request.resource.data.ct.size() <= 200
+          && request.resource.data.iv is string
+          && request.resource.data.iv.size() == 16
+          && request.resource.data.updatedAt == request.time;
+        allow delete: if canUseChat(chatId)
+          && (isAdmin()
+              || resource.data.uid == request.auth.uid
+              || msgGone(chatId, resource.data.msg));
+      }
+
+      // "escribiendo…" / "grabando audio…" / "enviando archivo…" (solo si no
+      // hay Realtime Database): la hora (o null) y el tipo. Cada quien el suyo.
+      match /typing/{userId} {
+        allow read: if canUseChat(chatId);
+        allow create, update: if canUseChat(chatId)
+          && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly(['at', 'k'])
+          && (request.resource.data.at == null || request.resource.data.at == request.time)
+          && (!('k' in request.resource.data) || request.resource.data.k in ['text', 'voice', 'file']);
+        allow delete: if false;
+      }
+
+      // "en línea": encendido o apagado y la hora. Solo lo ven los miembros de
+      // este chat. Cada quien solo el suyo.
+      match /presence/{userId} {
+        allow read: if canUseChat(chatId);
+        allow create, update: if canUseChat(chatId)
+          && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly(['on', 'at'])
+          && request.resource.data.on is bool
+          && request.resource.data.at == request.time;
+        allow delete: if false;
+      }
+
+      // Llamadas 1 a 1. La oferta y las señales para conectar van cifradas
+      // con la llave del chat; el audio y el video van directo entre los dos
+      // teléfonos. Al colgar se borra todo.
+      match /calls/{callId} {
+        allow read: if canUseChat(chatId);
+        allow create: if canUseChat(chatId)
+          && validSignal(['from', 'to', 'iv', 'ct', 'at'])
+          && request.resource.data.to is string
+          && request.resource.data.to != request.auth.uid
+          && chatHas(chatId, request.resource.data.to);
+        allow update: if false;
+        allow delete: if canUseChat(chatId);
+
+        match /sig/{sigId} {
+          function theCall() {
+            return get(/databases/$(database)/documents/chats/$(chatId)/calls/$(callId)).data;
+          }
+          allow read: if canUseChat(chatId);
+          allow create: if canUseChat(chatId)
+            && (request.auth.uid == theCall().from || request.auth.uid == theCall().to)
+            && validSignal(['from', 'iv', 'ct', 'at']);
+          allow update: if false;
+          allow delete: if canUseChat(chatId);
+        }
+      }
+
+      // Copia del perfil (llave pública + perfil cifrado) de cada miembro del
+      // chat, para que los demás miembros lo vean sin leer users/. Solo se
+      // acepta si es idéntica a su users/; la escribe él mismo o un fundador.
+      match /people/{userId} {
+        function src() {
+          return get(/databases/$(database)/documents/users/$(userId)).data;
+        }
+        allow read: if canUseChat(chatId);
+        allow create, update: if canUseChat(chatId)
+          && userId in get(/databases/$(database)/documents/chats/$(chatId)).data.members
+          && request.resource.data.keys().hasOnly(['pub', 'profIv', 'profCt'])
+          && request.resource.data.pub == src().pub
+          && request.resource.data.profIv == src().profIv
+          && request.resource.data.profCt == src().profCt;
+        allow delete: if false;
+      }
+
+      // Copia de la foto (cifrada) de cada miembro del chat. Igual: idéntica
+      // a su avatars/.
+      match /avatars/{userId} {
+        function pic() {
+          return get(/databases/$(database)/documents/avatars/$(userId)).data;
+        }
+        allow read: if canUseChat(chatId);
+        allow create, update: if canUseChat(chatId)
+          && userId in get(/databases/$(database)/documents/chats/$(chatId)).data.members
+          && request.resource.data.keys().hasOnly(['iv', 'data'])
+          && request.resource.data.iv == pic().iv
+          && request.resource.data.data == pic().data;
+        allow delete: if false;
+      }
+
+      // Hasta dónde leyó cada quien (palomitas): cuántos mensajes, cuándo y
+      // el id del último que vio (last). Cada quien solo el suyo.
+      match /reads/{userId} {
+        allow read: if canUseChat(chatId);
+        allow create, update: if canUseChat(chatId)
+          && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly(['n', 'at', 'last'])
+          && request.resource.data.n is int
+          && request.resource.data.n >= 0
+          && request.resource.data.at == request.time
+          && (!('last' in request.resource.data)
+              || (request.resource.data.last is string && request.resource.data.last.size() <= 64));
+        allow delete: if false;
+      }
+
+      // Foto del chat, cifrada con la llave del chat. Solo administradores.
+      match /photo/{photoId} {
+        allow read: if canUseChat(chatId);
+        allow create, update: if isAdmin() && canUseChat(chatId)
+          && photoId == 'current'
+          && request.resource.data.keys().hasOnly(['iv', 'data', 'by', 'at'])
+          && request.resource.data.iv is string
+          && request.resource.data.iv.size() == 16
+          && request.resource.data.data is bytes
+          && request.resource.data.data.size() <= 300000
+          && request.resource.data.by == request.auth.uid
+          && request.resource.data.at == request.time;
+        allow delete: if isAdmin() && canUseChat(chatId);
+      }
+
+      // Fotos y videos de una vista: quién ya los abrió ({mensaje}_{uid}).
+      // Cada quien solo el suyo. Se borran con su mensaje.
+      match /opened/{openId} {
+        allow read: if canUseChat(chatId);
+        allow create: if canUseChat(chatId)
+          && request.resource.data.keys().hasOnly(['msg', 'uid', 'at'])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.msg is string
+          && openId == request.resource.data.msg + '_' + request.auth.uid
+          && request.resource.data.at == request.time;
+        allow update: if false;
+        allow delete: if canUseChat(chatId)
+          && (isAdmin() || msgGone(chatId, resource.data.msg));
+      }
+
+      // Pendientes de las conversaciones nuevas.
+      match /tasks/{taskId} {
+        allow read: if canUseChat(chatId);
+        allow create: if canUseChat(chatId) && validTask(chatId);
+        allow update: if canUseChat(chatId) && validTaskUpdate();
+        allow delete: if false;
+      }
+
+      // Archivos de las conversaciones nuevas.
+      // Se borran con su mensaje: quien los subió o un fundador.
+      match /files/{fileId}/chunks/{chunkId} {
+        allow read: if canUseChat(chatId);
+        allow create: if canUseChat(chatId) && validChunk() && chatOpen(chatId);
+        allow update: if false;
+        allow delete: if canUseChat(chatId)
+          && (resource == null || resource.data.uid == request.auth.uid || isAdmin());
+      }
+    }
+
+    // =====================================================================
+    // Biblioteca de stickers (compartida por todos los miembros)
+    // =====================================================================
+
+    match /library/{stickerId} {
+      allow read: if isMember();
+      allow create: if isMember()
+        && request.resource.data.keys().hasOnly(['ct', 'iv', 'uid', 'createdAt', 'hidden'])
+        && request.resource.data.ct is string
+        && request.resource.data.ct.size() <= 2000
+        && request.resource.data.iv is string
+        && request.resource.data.iv.size() == 16
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.hidden == false;
+      allow update: if isMember()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hidden'])
+        && request.resource.data.hidden is bool;
+      allow delete: if false;
+    }
+
+    match /libfiles/{fileId}/chunks/{chunkId} {
+      allow read: if isMember();
+      allow create: if isMember() && validChunk();
+      allow update, delete: if false;
+    }
+
+    // =====================================================================
+    // Versión anterior: solo los dos fundadores
+    // =====================================================================
+
+    // Conversación "General" original.
+    match /messages/{messageId} {
+      allow read: if isFounder();
+      allow create: if isFounder() && validMessage();
+      allow update: if isFounder() && validStar();
+      allow delete: if isFounder();
+    }
+
+    match /files/{fileId}/chunks/{chunkId} {
+      allow read: if isFounder();
+      allow create: if isFounder() && validChunk();
+      allow update: if false;
+      allow delete: if isFounder();
+    }
+
+    match /stickers/{stickerId} {
+      allow read: if isFounder();
+      allow create: if isFounder()
+        && request.resource.data.keys().hasOnly(['ct', 'iv', 'uid', 'createdAt', 'hidden'])
+        && request.resource.data.ct is string
+        && request.resource.data.ct.size() <= 2000
+        && request.resource.data.iv is string
+        && request.resource.data.iv.size() == 16
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.hidden == false;
+      allow update: if isFounder()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hidden'])
+        && request.resource.data.hidden is bool;
+      allow delete: if false;
+    }
+
+    match /tasks/{taskId} {
+      allow read: if isFounder();
+      allow create: if isFounder()
+        && request.resource.data.chatId is string
+        && request.resource.data.chatId.size() > 0
+        && request.resource.data.chatId.size() <= 64
+        && validTask(request.resource.data.chatId);
+      allow update: if isFounder() && validTaskUpdate();
+      allow delete: if false;
+    }
+
+    // Todo lo demás de la base de datos queda cerrado.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
