@@ -18,7 +18,7 @@
  *   ícono de chat del monitor): los avisos son de la cuenta principal.
  */
 
-const APP_NAME = "Tienda en linea ";
+const APP_NAME = "Tienda en linea";
 const ICON = "/notification-icon.png";
 const BADGE = "/badge-96.png";
 

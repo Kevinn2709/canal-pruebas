@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description: "",
   robots: { index: false, follow: false }, // privado: que no lo indexen buscadores
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "Chat", statusBarStyle: "black" },
+  appleWebApp: { capable: true, title: "Tienda", statusBarStyle: "black" },
   icons: { icon: "/favicon-32.png", apple: "/apple-touch-icon.png" },
 };
 

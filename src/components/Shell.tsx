@@ -256,7 +256,7 @@ export function Shell({
   const totalUnread = ws.chats.reduce((n, c) => n + (ws.muted.has(c.id) ? 0 : ws.unreadOf(c)), 0);
   useEffect(() => {
     onUnread?.(totalUnread);
-    if (manageTitle && !embedded) document.title = totalUnread > 0 ? `(${totalUnread}) Chat` : "Chat";
+    if (manageTitle && !embedded) document.title = totalUnread > 0 ? `(${totalUnread}) Tienda` : "Tienda";
     if (linked) return; // el número del ícono de la app es de la cuenta principal
     const nav = navigator as Navigator & { setAppBadge?: (n: number) => Promise<void>; clearAppBadge?: () => Promise<void> };
     try {
