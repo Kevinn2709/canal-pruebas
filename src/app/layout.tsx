@@ -24,10 +24,21 @@ export default function RootLayout({
   children: ReactNode;
 }) {
   return (
-    <html lang="es">
+    // data-vista lo pone el script de abajo antes de pintar (ver BOOT_SCRIPT).
+    <html lang="es" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: BOOT_SCRIPT }} />
+      </head>
       <body>
         {children}
       </body>
     </html>
   );
 }
+
+/**
+ * Arranque sin parpadeo: si en este equipo lo último que se vio fue el
+ * monitor (un fundador con la sesión recordada), se muestra su esqueleto en
+ * lugar de la landing mientras Firebase responde. Se borra al cerrar sesión.
+ */
+const BOOT_SCRIPT = `try{if(location.pathname==="/"&&localStorage.getItem("canal:vista")==="monitor")document.documentElement.dataset.vista="monitor"}catch(e){}`;

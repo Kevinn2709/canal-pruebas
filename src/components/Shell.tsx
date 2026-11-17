@@ -54,6 +54,7 @@ import { AllTasks } from "./Tasks";
 import { Settings } from "./Settings";
 import { ChatAvatar } from "./Avatar";
 import { LockIcon } from "./Icons";
+import { ChatListSkeleton } from "./Skeletons";
 
 type Dialog = { mode: "create" } | { mode: "edit"; chat: ChatInfo } | null;
 type View = { type: "chat"; id: string } | { type: "tasks" } | { type: "settings" } | null;
@@ -317,13 +318,8 @@ export function Shell({
     );
   }
 
-  if (ws.loading) {
-    return (
-      <div className="flex h-dvh items-center justify-center bg-neutral-950 text-sm text-neutral-500">
-        Cargando conversaciones…
-      </div>
-    );
-  }
+  // Mientras llegan los chats: la forma de la lista (nunca una pantalla vacía).
+  if (ws.loading) return <ChatListSkeleton />;
 
   const toast = notifier.toast;
   const toastChat = toast ? ws.chats.find((c) => c.id === toast.chatId) : undefined;
@@ -331,7 +327,7 @@ export function Shell({
   return (
     <div className="flex h-dvh bg-neutral-950 text-neutral-100">
       <aside
-        className={`${somethingOpen ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-neutral-900 md:w-[22rem] md:border-r`}
+        className={`${somethingOpen ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-white/[0.08] md:w-[22rem] md:border-r`}
       >
         <Sidebar
           ws={ws}
@@ -390,7 +386,8 @@ export function Shell({
 
       {toast && (
         <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center px-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
-          <div className="pointer-events-auto flex w-full max-w-md items-center gap-3 rounded-2xl border border-neutral-800 bg-neutral-900/95 p-3 shadow-2xl backdrop-blur">
+          <div className="anim-pop-in pointer-events-auto relative isolate flex w-full max-w-md items-center gap-3 overflow-hidden rounded-[22px] p-3">
+            <div className="glass-thick glass-ring absolute inset-0 -z-10" aria-hidden="true" />
             <button
               type="button"
               onClick={() => {

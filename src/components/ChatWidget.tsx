@@ -16,6 +16,8 @@
  * El panel ocupa toda la pantalla en el teléfono y flota en la computadora.
  * Se queda montado aunque esté cerrado, para que lleguen los mensajes, el
  * número de no leídos y las llamadas.
+ *
+ * `raised`: en el monitor el botón flota encima de la barra de pestañas.
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -36,8 +38,8 @@ function BubbleIcon({ className = "h-6 w-6" }: { className?: string }) {
 
 function ChevronDown() {
   return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-      <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
+    <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" aria-hidden="true">
+      <path fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
     </svg>
   );
 }
@@ -49,6 +51,7 @@ export function ChatWidget({
   onLockedTap,
   unread = 0,
   linkedName,
+  raised = false,
   children,
 }: {
   mode: WidgetMode;
@@ -57,6 +60,8 @@ export function ChatWidget({
   onLockedTap?: () => void;
   unread?: number;
   linkedName?: string;
+  /** Botón por encima de la barra de pestañas del monitor. */
+  raised?: boolean;
   children?: ReactNode;
 }) {
   const [hint, setHint] = useState(false);
@@ -116,7 +121,9 @@ export function ChatWidget({
     <>
       {usable && (
         <div
-          className={`${open ? "flex" : "hidden"} fixed inset-0 z-40 flex-col overflow-hidden bg-neutral-950 text-neutral-100 md:inset-auto md:bottom-24 md:right-5 md:h-[min(44rem,calc(100dvh-8rem))] md:w-[min(60rem,calc(100vw-2.5rem))] md:rounded-2xl md:border md:border-neutral-800 md:shadow-2xl`}
+          className={`${open ? "flex anim-widget-up md:anim-widget-pop" : "hidden"} fixed inset-0 z-40 flex-col overflow-hidden bg-neutral-950 text-neutral-100 md:inset-auto md:right-5 md:w-[min(60rem,calc(100vw-2.5rem))] md:rounded-[28px] md:shadow-[0_30px_80px_rgba(0,0,0,0.7)] md:ring-1 md:ring-white/10 ${
+            raised ? "md:bottom-[9.5rem] md:h-[min(44rem,calc(100dvh-12rem))]" : "md:bottom-24 md:h-[min(44rem,calc(100dvh-8rem))]"
+          }`}
           // Las ventanas "fijas" de la app (fotos, llamadas, menús) quedan
           // dentro del panel y no se salen de él.
           style={{ transform: "translateZ(0)" }}
@@ -124,14 +131,15 @@ export function ChatWidget({
           aria-label="Mensajes"
           aria-hidden={!open}
         >
-          <div className="flex shrink-0 items-center justify-between border-b border-neutral-900 px-3 pb-1.5 pt-[max(0.375rem,env(safe-area-inset-top))] md:pt-1.5">
-            <p className="truncate text-sm font-medium text-neutral-300">
-              Mensajes{mode === "linked" && linkedName ? ` · ${linkedName}` : ""}
+          <div className="relative isolate flex shrink-0 items-center justify-between px-3 pb-1 pt-[max(0.25rem,env(safe-area-inset-top))] md:pt-1">
+            <div className="glass glass-edge-top absolute inset-0 -z-10" aria-hidden="true" />
+            <p className="min-w-0 truncate pl-1 text-[13px] font-semibold text-neutral-400">
+              Mensajes{mode === "linked" && linkedName ? <span className="font-normal text-neutral-500"> · {linkedName}</span> : null}
             </p>
             <button
               type="button"
               onClick={() => onOpenChange(false)}
-              className="rounded-full p-2 text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-neutral-300 transition-colors hover:bg-white/15"
               aria-label="Cerrar mensajes"
             >
               <ChevronDown />
@@ -157,24 +165,29 @@ export function ChatWidget({
       )}
 
       <div
-        className={`${open ? "hidden md:flex" : "flex"} fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] right-5 z-40 flex-col items-end gap-2`}
+        className={`${open ? "hidden md:flex" : "flex"} fixed right-5 z-40 flex-col items-end gap-2 ${
+          raised ? "bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+4.75rem)]" : "bottom-[max(1.25rem,env(safe-area-inset-bottom))]"
+        }`}
       >
         {hint && (
-          <p role="status" className="max-w-[16rem] rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-2 text-xs text-neutral-200 shadow-xl">
+          <p role="status" className="anim-pop-in relative isolate max-w-[16rem] overflow-hidden rounded-[14px] px-3.5 py-2.5 text-[13px] text-neutral-100">
+            <span className="glass-thick glass-ring absolute inset-0 -z-10" aria-hidden="true" />
             Inicia sesión para usar el chat.
           </p>
         )}
         <button
           type="button"
           onClick={tap}
-          className={`relative flex h-14 w-14 items-center justify-center rounded-full shadow-xl transition-transform active:scale-95 ${
-            usable ? "bg-white text-neutral-950" : "bg-neutral-800 text-neutral-400"
+          className={`relative flex h-14 w-14 items-center justify-center rounded-full transition-transform duration-200 ease-ios active:scale-90 ${
+            usable
+              ? "bg-gradient-to-b from-[#3a9bff] to-[#0a6cff] text-white shadow-[0_10px_30px_rgba(10,108,255,0.45),inset_0_0.5px_0_rgba(255,255,255,0.35)]"
+              : "bg-neutral-800 text-neutral-400 shadow-[0_10px_30px_rgba(0,0,0,0.5),inset_0_0.5px_0_rgba(255,255,255,0.12)]"
           }`}
           aria-label={open ? "Cerrar mensajes" : count > 0 ? `Mensajes, ${count} sin leer` : "Mensajes"}
         >
           <BubbleIcon />
           {usable && count > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-semibold text-white">
+            <span className="anim-pop-in absolute -right-0.5 -top-0.5 flex h-[22px] min-w-[22px] items-center justify-center rounded-full bg-red-500 px-1.5 text-[12px] font-semibold text-white ring-2 ring-black">
               {count > 99 ? "99+" : count}
             </span>
           )}

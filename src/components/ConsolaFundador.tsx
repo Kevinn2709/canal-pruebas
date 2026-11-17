@@ -11,6 +11,8 @@
  * Retorno automático: si la web pasa a segundo plano o se bloquea la pantalla
  * (visibilityState = "hidden"), la consola se cierra y se vuelve al monitor.
  * Al cerrarse:
+ * - Un velo con desenfoque cubre la pantalla en ese mismo instante y se
+ *   desvanece al volver, ya sobre el monitor.
  * - Se quitan de la pantalla y de la memoria los mensajes ya descifrados (en
  *   Firestore no se borra nada).
  * - Se corta la conexión con Realtime Database: tu presencia pasa al momento
@@ -26,6 +28,7 @@ import type { User } from "firebase/auth";
 import type { Session } from "@/lib/session";
 import { setRtdbConnected } from "@/lib/firebase";
 import { consoleHeld, holdConsole, releaseAll, releaseConsole } from "@/lib/consoleGuard";
+import { showVeil } from "@/lib/veil";
 import { AppReady } from "./AppReady";
 import { VincularMiembro } from "./VincularMiembro";
 
@@ -59,7 +62,12 @@ export function ConsolaFundador({
 
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
-        if (!consoleHeld()) onExit();
+        if (!consoleHeld()) {
+          // El velo va primero y sin esperar a React: cubre los chats en el
+          // mismo instante en que la web pasa a segundo plano.
+          showVeil();
+          onExit();
+        }
       } else {
         window.clearTimeout(releaseTimer);
         releaseTimer = window.setTimeout(() => releaseConsole("archivo"), PICKER_RELEASE_DELAY_MS);
@@ -87,13 +95,15 @@ export function ConsolaFundador({
   }, [onExit]);
 
   return (
-    <AppReady
-      user={user}
-      session={session}
-      onSession={onSession}
-      manageTitle={false}
-      onExitConsole={onExit}
-      extraSettings={(ws) => <VincularMiembro ws={ws} myUid={session.uid} />}
-    />
+    <div className="vista-in h-dvh">
+      <AppReady
+        user={user}
+        session={session}
+        onSession={onSession}
+        manageTitle={false}
+        onExitConsole={onExit}
+        extraSettings={(ws) => <VincularMiembro ws={ws} myUid={session.uid} />}
+      />
+    </div>
   );
 }

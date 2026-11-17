@@ -169,6 +169,45 @@ Usa:
   `none`/`DENY`), necesarios para el iframe de la cuenta vinculada. Otros
   sitios siguen sin poder meter la web en un iframe.
 
+## Novedades de la 0.8 (diseño estilo iOS y rendimiento)
+
+Solo cambia la interfaz. El cifrado, el service worker (push), las conexiones a
+Firebase y los papeles quedan igual.
+
+- **Paleta de iOS en modo oscuro** en toda la app (`tailwind.config.ts`): los
+  grises `neutral-*` pasan a los grises del sistema de Apple y los acentos a
+  azul, verde, rojo y naranja del sistema.
+- **Vidrio solo en la capa de controles** (barras, hojas, barra de pestañas,
+  barra de escribir), con una versión opaca si el sistema pide más contraste.
+  Las tarjetas de contenido son sólidas.
+- **Landing**: portada tipo página de producto, avance por fases, novedades,
+  preguntas en acordeón y "Contactar soporte" (hoja con formulario). Tres
+  toques en el pie de página también abren el inicio de sesión. Si en Vercel
+  defines `NEXT_PUBLIC_SUPPORT_EMAIL`, el formulario abre el correo con el
+  mensaje listo; si no, solo confirma en pantalla.
+- **Monitor**: pestañas Resumen, Dominios e Historial; puntos de estado que
+  respiran; buscador estilo iOS (`root` sigue abriendo la consola); filtro por
+  estado; orden por nombre, latencia o SSL; detalle de cada dominio en una
+  hoja con gráfica de latencia y barras de uptime. El historial se guarda en
+  el equipo (localStorage) con las revisiones hechas mientras el monitor
+  estuvo abierto.
+- **Chat estilo Mensajes**: burbujas azules y grises que se juntan entre
+  mensajes seguidos y con "colita" en la última; palomitas y reloj vectoriales
+  (la palomita nueva se dibuja); "Escribiendo…" con tres puntos en ola; barra
+  superior y barra de escribir de vidrio.
+- **Rendimiento**:
+  - Cada mensaje está memorizado (`React.memo` con comparación propia) y las
+    acciones que recibe son estables (`useCallback`), así "escribiendo…" o la
+    presencia no vuelven a dibujar la lista.
+  - Consola, chats, inicio de sesión y espera de aprobación se cargan aparte
+    (`next/dynamic`) y se precargan cuando el teléfono está libre.
+  - Primer cuadro sin pantalla vacía: la landing sale del servidor; en el
+    equipo de un fundador, un script en `<head>` muestra el esqueleto del
+    monitor antes de pintar.
+  - Al pasar a segundo plano desde la consola, un velo con desenfoque cubre la
+    pantalla en ese mismo instante (sin esperar a React) y se desvanece al
+    volver al monitor.
+
 ## Llamadas
 
 - **Cómo se cifran:** el audio y el video van por WebRTC, que siempre los
