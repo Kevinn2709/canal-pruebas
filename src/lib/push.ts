@@ -29,7 +29,6 @@ export interface DeviceSettings {
   keepKeyboard: boolean; // al enviar, el teclado sigue abierto
   showOnline: boolean; // los demás ven cuando estás "en línea"
   relayCalls: boolean; // llamadas siempre por el servidor de relevo (oculta tu IP)
-  shield: boolean; // tapar la pantalla (desenfoque) al salir de la app o perder el foco
 }
 
 // La sesión vinculada guarda sus ajustes aparte: así no cambia los del
@@ -44,7 +43,6 @@ const DEFAULTS: DeviceSettings = {
   keepKeyboard: true,
   showOnline: true,
   relayCalls: false,
-  shield: true,
 };
 const SETTINGS_EVENT = "canal-ajustes";
 

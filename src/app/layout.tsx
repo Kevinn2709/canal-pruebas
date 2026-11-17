@@ -1,14 +1,13 @@
 import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { PrivacyShield } from "@/components/PrivacyShield";
 
 export const metadata: Metadata = {
   title: "Sitio en mantenimiento",
   description: "",
   robots: { index: false, follow: false }, // privado: que no lo indexen buscadores
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "Chat", statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, title: "Chat", statusBarStyle: "black" },
   icons: { icon: "/favicon-32.png", apple: "/apple-touch-icon.png" },
 };
 
@@ -28,7 +27,6 @@ export default function RootLayout({
     <html lang="es">
       <body>
         {children}
-        <PrivacyShield />
       </body>
     </html>
   );

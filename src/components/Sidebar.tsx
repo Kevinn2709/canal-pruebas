@@ -322,6 +322,7 @@ export function Sidebar({
   onOpenTasks,
   onOpenSettings,
   onCreate,
+  onExitConsole,
 }: {
   ws: Workspace;
   myUid: string;
@@ -333,6 +334,8 @@ export function Sidebar({
   onOpenTasks: () => void;
   onOpenSettings: () => void;
   onCreate: () => void;
+  /** Consola del fundador: volver al monitor. */
+  onExitConsole?: () => void;
 }) {
   const [filter, setFilter] = useState<Filter>({ kind: "all" });
   const [menuFor, setMenuFor] = useState<string | null>(null);
@@ -393,6 +396,18 @@ export function Sidebar({
           <PersonAvatar ws={ws} uid={myUid} size={34} />
         </button>
         <h1 className="flex-1 pl-1 text-xl font-semibold tracking-tight">Chats</h1>
+        {onExitConsole && (
+          <button
+            onClick={onExitConsole}
+            className="rounded-full p-2 text-neutral-300 transition-colors hover:bg-neutral-900"
+            aria-label="Volver al monitor"
+            title="Volver al monitor"
+          >
+            <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+              <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+        )}
         {ws.admin && (
           <button
             onClick={onCreate}

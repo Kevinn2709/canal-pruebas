@@ -646,12 +646,6 @@ export function Settings({
               onChange={(v) => set({ showOnline: v })}
             />
             <Toggle
-              label="Ocultar la pantalla al salir de la app"
-              hint="Desenfoca todo cuando cambias de app, bloqueas el teléfono o la ventana pierde el foco, para que no se vea en el selector de apps."
-              checked={settings.shield}
-              onChange={(v) => set({ shield: v })}
-            />
-            <Toggle
               label="Llamadas solo por relevo (ocultar mi IP)"
               hint="La otra persona no ve tu dirección IP. Solo funciona si configuraste el relevo TURN en Vercel; si no, se ignora."
               checked={settings.relayCalls}

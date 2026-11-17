@@ -139,7 +139,7 @@ export function MonitorDominios({ user, onRoot }: { user: User; onRoot: () => vo
 
   return (
     <div className="min-h-dvh bg-neutral-950 text-neutral-100">
-      <header className="sticky top-0 z-10 border-b border-neutral-900 bg-neutral-950/95 px-4 pb-3 pt-[max(0.875rem,env(safe-area-inset-top))] backdrop-blur sm:px-8">
+      <header className="sticky top-0 z-10 border-b border-neutral-900 bg-neutral-950 px-4 pb-3 pt-[max(0.875rem,env(safe-area-inset-top))] sm:px-8">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-base font-semibold tracking-tight">{MONITOR_TITLE}</h1>

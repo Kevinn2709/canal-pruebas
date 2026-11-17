@@ -344,6 +344,7 @@ export function Shell({
           onOpenTasks={() => go("#pendientes")}
           onOpenSettings={() => go("#ajustes")}
           onCreate={() => setDialog({ mode: "create" })}
+          onExitConsole={onExitConsole}
         />
       </aside>
 

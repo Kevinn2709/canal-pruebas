@@ -47,6 +47,13 @@ export default function LinkedPage() {
   const [active, setActive] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
+  // Dentro del panel: las pantallas ocupan el iframe y no repiten el margen
+  // de la muesca del teléfono (ya lo pone la barra "Mensajes" de arriba).
+  useEffect(() => {
+    document.documentElement.classList.add("in-panel");
+    return () => document.documentElement.classList.remove("in-panel");
+  }, []);
+
   useEffect(() => {
     setInFrame(window.parent !== window);
     setLinked(getLinked());

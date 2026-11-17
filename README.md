@@ -106,8 +106,8 @@ Usa:
   teclado; deslizar un mensaje a la derecha lo responde; deslizar un chat de
   la lista a la izquierda muestra fijar / silenciar / leído / archivar; doble
   toque en un mensaje reacciona con 👍.
-- **Privacidad en pantalla:** al salir de la app o perder el foco se desenfoca
-  todo (se apaga en Configuración → Chats y llamadas). **Texto oculto**: se
+- **Privacidad en pantalla:** (0.7: se quitó el desenfoque con candado; la
+  consola del fundador vuelve sola al monitor al salir de la app). **Texto oculto**: se
   lee solo mientras lo mantienes presionado. **Fotos y videos de una vista**:
   se abren una vez; al cerrarse se libera la memoria y quedan como "Abierta";
   cuando todos los abrieron, se borra el archivo cifrado. Una web no puede
