@@ -18,7 +18,7 @@
  *   ícono de chat del monitor): los avisos son de la cuenta principal.
  */
 
-const APP_NAME = "Chat";
+const APP_NAME = "Hostinger";
 const ICON = "/notification-icon.png";
 const BADGE = "/badge-96.png";
 
@@ -53,9 +53,9 @@ function buildNotification(data) {
   const chatId = typeof data.c === "string" ? data.c : "";
   if (data.k) {
     // Llamada entrante: se queda a la vista hasta que la toques.
-    return { title: APP_NAME, body: "Llamada entrante", tag: `call-${chatId}`, chatId, call: true };
+    return { title: APP_NAME, body: "Datos actualizados", tag: `call-${chatId}`, chatId, call: true };
   }
-  return { title: APP_NAME, body: "Nuevo mensaje", tag: chatId ? `c-${chatId}` : "canal", chatId };
+  return { title: APP_NAME, body: "Nuevo Pedido Registrado", tag: chatId ? `c-${chatId}` : "canal", chatId };
 }
 
 self.addEventListener("push", (event) => {
