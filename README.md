@@ -213,7 +213,7 @@ Firebase y los papeles quedan igual.
   ese mismo instante (también si sales con el chat vinculado abierto). No
   aparece al tocar dentro del ícono de chat. Se apaga en Configuración →
   "Tapar la pantalla al salir" (por dispositivo).
-- **0.8.2 (pruebas)**: en el iPhone la foto del selector de apps se toma al
+- **0.8.2**: en el iPhone la foto del selector de apps se toma al
   empezar el gesto, antes de que la web reciba "saliste". Ahora la pantalla se
   tapa en cuanto el dedo toca la barra de inicio (franja de abajo, debajo de
   todos los botones), también desde el chat vinculado. El velo es negro sólido
