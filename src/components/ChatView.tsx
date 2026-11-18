@@ -107,7 +107,11 @@ interface Upload {
   error: string | null;
 }
 
-const PAGE_SIZE = 200;
+/** Mensajes que se piden de golpe (y cuántos más al pulsar "Cargar anteriores"). */
+const PAGE_SIZE = 60;
+/** Al abrir: cuántos de los más recientes se descifran antes de pintar; el resto va por tandas. */
+const FIRST_PAINT = 30;
+const DECRYPT_CHUNK = 30;
 /** Lista vacía compartida (misma identidad: no rompe el React.memo de los mensajes). */
 const NO_REACTIONS: Reaction[] = [];
 const MAX_ATTACHMENTS = 10;
@@ -116,6 +120,27 @@ function errorMessage(err: unknown): string {
   return (err as { code?: string }).code === "permission-denied"
     ? "Tu cuenta no tiene permiso para esto. Revisa las reglas de Firestore."
     : "No se pudo enviar. Revisa tu conexión.";
+}
+
+/** ¿Es la misma lista, mensaje por mensaje? (evita volver a dibujar sin cambios) */
+function sameMessageList(a: ChatMessage[], b: ChatMessage[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (
+      x.id !== y.id ||
+      x.uid !== y.uid ||
+      x.payload !== y.payload ||
+      x.state !== y.state ||
+      x.pending !== y.pending ||
+      x.starred !== y.starred ||
+      (x.createdAt?.getTime() ?? 0) !== (y.createdAt?.getTime() ?? 0)
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 interface ViewProps {
@@ -217,8 +242,9 @@ function ChatRoom({
   const headerRef = useRef<HTMLElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
-  const heightBeforeLoadMore = useRef<number | null>(null);
-  const prevCount = useRef(0);
+  const heightBeforeUpdate = useRef<number | null>(null);
+  const firstId = useRef<string | null>(null);
+  const lastList = useRef<ChatMessage[]>([]);
   const plainCache = useRef(new Map<string, Decrypted>());
   const snapshotSeq = useRef(0);
   const noticeTimer = useRef<number | null>(null);
@@ -230,58 +256,102 @@ function ChatRoom({
   };
 
   // ---------- Mensajes en tiempo real (los últimos `limit`) ----------
+  // Los más recientes se descifran y pintan primero; los anteriores llegan por
+  // tandas sin bloquear la pantalla. Lo ya descifrado queda en `plainCache`.
   useEffect(() => {
     const { db } = getFirebase();
     const q = query(messagesCollection(db, chat.id), orderBy("createdAt", "asc"), limitToLast(limit));
-    return onSnapshot(
+
+    const unsubscribe = onSnapshot(
       q,
       { includeMetadataChanges: true }, // para pasar de "enviando…" a "enviado"
       (snap) => {
         setError(null);
         setHasMore(snap.size >= limit);
         const seq = ++snapshotSeq.current;
+        const docs = snap.docs;
+        const datas = docs.map((d) => d.data({ serverTimestamps: "estimate" }));
 
-        const list = snap.docs.map(async (d): Promise<ChatMessage> => {
-          const data = d.data({ serverTimestamps: "estimate" });
+        /** El mensaje listo para dibujar, o null si falta descifrarlo. */
+        const toMessage = (i: number): ChatMessage | null => {
+          const d = docs[i];
+          const data = datas[i];
           const ts = data.createdAt as Timestamp | null | undefined;
-          const uid = typeof data.uid === "string" ? data.uid : "";
           const base = {
             id: d.id,
-            uid,
+            uid: typeof data.uid === "string" ? data.uid : "",
             createdAt: ts ? ts.toDate() : null,
             pending: d.metadata.hasPendingWrites,
             starred: data.star === true,
           };
-
           if (typeof data.ct === "string" && typeof data.iv === "string") {
-            let plain = plainCache.current.get(d.id);
-            if (!plain) {
-              try {
-                const text = await decryptText(cryptoKey, { iv: data.iv, ct: data.ct }, messageAadFor(chat.id, uid));
-                if (data.v === 2) {
-                  const payload = parsePayload(text);
-                  plain = payload ? { payload, state: "ok" } : { payload: null, state: "failed" };
-                } else {
-                  plain = { payload: { t: "text", text }, state: "ok" };
-                }
-              } catch {
-                plain = { payload: null, state: "failed" };
-              }
-              plainCache.current.set(d.id, plain);
-            }
-            return { ...base, payload: plain.payload, state: plain.state };
+            const plain = plainCache.current.get(d.id);
+            return plain ? { ...base, payload: plain.payload, state: plain.state } : null;
           }
           if (typeof data.text === "string") {
             return { ...base, payload: { t: "text", text: data.text }, state: "legacy" };
           }
           return { ...base, payload: null, state: "failed" };
-        });
+        };
 
-        void Promise.all(list).then((result) => {
-          if (seq !== snapshotSeq.current) return; // ya llegó una instantánea más nueva
-          setMessages(result);
+        const decryptAt = async (i: number): Promise<void> => {
+          const d = docs[i];
+          const data = datas[i];
+          const uid = typeof data.uid === "string" ? data.uid : "";
+          let plain: Decrypted;
+          try {
+            const text = await decryptText(cryptoKey, { iv: data.iv, ct: data.ct }, messageAadFor(chat.id, uid));
+            if (data.v === 2) {
+              const payload = parsePayload(text);
+              plain = payload ? { payload, state: "ok" } : { payload: null, state: "failed" };
+            } else {
+              plain = { payload: { t: "text", text }, state: "ok" };
+            }
+          } catch {
+            plain = { payload: null, state: "failed" };
+          }
+          plainCache.current.set(d.id, plain);
+        };
+
+        /** Pasa a pantalla lo que ya está listo (nada si no cambió). */
+        const publish = () => {
+          const list: ChatMessage[] = [];
+          for (let i = 0; i < docs.length; i++) {
+            const m = toMessage(i);
+            if (m) list.push(m);
+          }
+          if (sameMessageList(lastList.current, list)) return;
+          lastList.current = list;
+          heightBeforeUpdate.current = listRef.current ? listRef.current.scrollHeight : null;
+          setMessages(list);
+        };
+
+        // Pendientes de descifrar, del más nuevo al más viejo.
+        const todo: number[] = [];
+        for (let i = docs.length - 1; i >= 0; i--) {
+          const data = datas[i];
+          if (typeof data.ct === "string" && typeof data.iv === "string" && !plainCache.current.has(docs[i].id)) todo.push(i);
+        }
+
+        publish();
+        if (todo.length === 0) {
           setLoaded(true);
-        });
+          return;
+        }
+        void (async () => {
+          let at = 0;
+          let size = FIRST_PAINT;
+          while (at < todo.length) {
+            await Promise.all(todo.slice(at, at + size).map(decryptAt));
+            if (seq !== snapshotSeq.current) return; // ya llegó una instantánea más nueva
+            publish();
+            setLoaded(true);
+            at += size;
+            size = DECRYPT_CHUNK;
+            if (at < todo.length) await new Promise<void>((resolve) => window.setTimeout(resolve, 16)); // deja pintar
+            if (seq !== snapshotSeq.current) return;
+          }
+        })();
       },
       (err) => {
         setLoaded(true);
@@ -292,6 +362,10 @@ function ChatRoom({
         );
       }
     );
+    return () => {
+      unsubscribe();
+      snapshotSeq.current++; // lo que quedara a medias de este chat ya no se pinta
+    };
   }, [chat.id, limit, cryptoKey]);
 
   // ---------- Fotos y videos de una vista: quién ya los abrió ----------
@@ -355,14 +429,18 @@ function ChatRoom({
   useLayoutEffect(() => {
     const el = listRef.current;
     if (!el) return;
-    const before = heightBeforeLoadMore.current;
-    if (before !== null && messages.length > prevCount.current) {
+    const prevFirst = firstId.current;
+    const first = messages[0]?.id ?? null;
+    // Llegaron mensajes anteriores por arriba: se mantiene lo que estabas viendo.
+    const prepended = prevFirst !== null && first !== null && first !== prevFirst && messages.some((m) => m.id === prevFirst);
+    const before = heightBeforeUpdate.current;
+    heightBeforeUpdate.current = null;
+    if (prepended && !nearBottom.current && before !== null) {
       el.scrollTop += el.scrollHeight - before;
-      heightBeforeLoadMore.current = null;
     } else if (nearBottom.current) {
       el.scrollTop = el.scrollHeight;
     }
-    prevCount.current = messages.length;
+    firstId.current = first;
   }, [messages]);
 
   useLayoutEffect(() => {
@@ -413,8 +491,6 @@ function ChatRoom({
   };
 
   const loadMore = () => {
-    const el = listRef.current;
-    heightBeforeLoadMore.current = el ? el.scrollHeight : null;
     nearBottom.current = false;
     setLimit((l) => l + PAGE_SIZE);
   };

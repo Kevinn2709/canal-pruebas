@@ -220,6 +220,13 @@ Firebase y los papeles quedan igual.
   con el ícono de la app. Si fue solo un toque se quita al soltar; si abriste
   el selector y regresas a la misma app, se quita al tocar la pantalla. En
   Configuración hay un diagnóstico con los últimos eventos.
+- **0.8.3 · Chats más rápidos**: al abrir un chat se piden los últimos 60
+  mensajes (antes 200; "Cargar mensajes anteriores" trae 60 más). Los 30 más
+  recientes se descifran y pintan primero y el resto llega por tandas sin
+  congelar la pantalla; al llegar mensajes anteriores por arriba no se mueve lo
+  que estás viendo. Si una actualización no cambia nada (por ejemplo, el paso
+  de caché a servidor) la lista no se vuelve a dibujar. El cifrado, las reglas
+  y las llaves no cambian.
 
 ## Llamadas
 
